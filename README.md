@@ -16,9 +16,10 @@ Hasilnya akan disimpan ke file baru bernama `hasil_perhitungan_promo.xlsx`.
 ## 🚀 Cara Pakai
 
 1. **Install dependency:**
-
 ```bash
 npm install xlsx
+```
 
 2. **Run Program:**
+```bash
 node index.js
