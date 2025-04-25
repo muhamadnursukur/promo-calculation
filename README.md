@@ -1,4 +1,4 @@
-# Promo Calculator - Excel Based
+# Promo Calculation - Excel Based
 
 Script Node.js ini digunakan untuk membaca aturan promo dari file Excel dan memproses data transaksi penjualan (`sell out`) untuk menghitung:
 - **Bonus Barang**
