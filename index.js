@@ -43,11 +43,10 @@ function hitungPromo(jumlahKarton, namaProduk, area, promoRules) {
         // Mengurutkan aturan promo berdasarkan kolom Min secara menurun untuk BONUS BARANG
         const sortedBonusRules = rules
             .filter(rule => rule.tipePromo === 'Bonus Barang')
-            .sort((a, b) => b.min - a.min); // Mengurutkan nilai pada kolom Min dari terbesar ke terkecil
+            .sort((a, b) => b.min - a.min);
 
         let remainingKarton = jumlahKarton;
 
-        // memproses setiap lapisan untuk promo bonus barang
         sortedBonusRules.forEach(rule => {
             if (remainingKarton >= rule.min) {
                 const kelipatan = Math.floor(remainingKarton / rule.min);
@@ -57,7 +56,6 @@ function hitungPromo(jumlahKarton, namaProduk, area, promoRules) {
             }
         });
 
-        // Jika masih ada karton tersisa dan bisa masuk ke lapisan yang lebih kecil
         if (remainingKarton > 0) {
             sortedBonusRules.forEach(rule => {
                 if (remainingKarton >= rule.min) {
@@ -73,7 +71,6 @@ function hitungPromo(jumlahKarton, namaProduk, area, promoRules) {
     if (promoRules[namaProduk] && promoRules[namaProduk][area]) {
         const rules = promoRules[namaProduk][area];
 
-        // Proses setiap lapisan CASH BACK
         rules.forEach(rule => {
             if (rule.tipePromo === 'Cashback') {
                 if (jumlahKarton >= rule.min && jumlahKarton <= rule.max) {
@@ -94,18 +91,58 @@ function prosesTransaction(filePath, promoRules) {
     const rows = XLSX.utils.sheet_to_json(sheet);
 
     const hasilPerhitungan = [];
-    const totalData = rows.length;
+    const produkGabunganPerRegion = {
+        'JAWA 1': ['FORTIUS 10', 'FORTIUS 30'],
+        'JAWA 2': ['OKEBIS KELAPA EXTRA 28', 'MARIE SUSU 40']
+    };
+
+    const minimumValuePromo = 300000;
+    const valuePerKelipatan = 10000;
+
+    let transaksiGabungan = {};
+    rows.forEach(row => {
+        const key = `${row.Nama_toko}-${row.Nota}`;
+        if (!transaksiGabungan[key]) {
+            transaksiGabungan[key] = [];
+        }
+        transaksiGabungan[key].push(row);
+    });
+
+    const totalData = Object.keys(transaksiGabungan).length;
     let processedData = 0;
 
-    rows.forEach(row => {
-        const { Periode, Region, Divisi, Distributor, Depo, Area, Unique_Code, Nama_toko, Nota, Tgl_Nota,
-            'Nama Produk': namaProduk, RegFest, Qty_KTN, 'Value Netto': valueNetto, 'Qty In Pcs': qtyInPcs, 'Jumlah Karton': jumlahKarton } = row;
+    Object.entries(transaksiGabungan).forEach(([key, transaksiList]) => {
+        const region = transaksiList[0].Region;
+        // console.log(`Memeriksa region: ${region}`); // Log untuk debugging
 
-        if (namaProduk && jumlahKarton !== undefined && Area) {
-            const { totalBonusBarang, totalCashback, layerBonus, layerCashback } = hitungPromo(jumlahKarton, namaProduk, Area, promoRules);
+        const produkGabungan = produkGabunganPerRegion[region] || [];
+        // console.log(`Produk gabungan untuk region ${region}: ${produkGabungan}`); // Log untuk debugging
 
-            // Menyiapkan hasil perhitungan
-            const hasil = {
+        const produkTerlibat = transaksiList.filter(row => produkGabungan.includes(row['Nama Produk']));
+        const totalValueGabungan = produkTerlibat.reduce((sum, row) => sum + (row['Value Netto'] || 0), 0);
+
+        // console.log(`Total Value Gabungan untuk region ${region}: ${totalValueGabungan}`); // Log untuk debugging
+
+        const kelipatan = Math.floor(totalValueGabungan / minimumValuePromo);
+        const promoGabungan = kelipatan * valuePerKelipatan;
+
+        transaksiList.forEach(row => {
+            const {
+                Periode, Region, Divisi, Distributor, Depo, Area, Unique_Code,
+                Nama_toko, Nota, Tgl_Nota, 'Nama Produk': namaProduk, RegFest,
+                Qty_KTN, 'Value Netto': valueNetto, 'Qty In Pcs': qtyInPcs, 'Jumlah Karton': jumlahKarton
+            } = row;
+
+            const valueNettoBaris = valueNetto || 0;
+
+            let porsiCashback = 0;
+            if (produkGabungan.includes(namaProduk)) {
+                porsiCashback = totalValueGabungan > 0
+                    ? (valueNettoBaris / totalValueGabungan) * promoGabungan
+                    : 0;
+            }
+
+            let hasil = {
                 Periode,
                 Region,
                 Divisi,
@@ -122,35 +159,40 @@ function prosesTransaction(filePath, promoRules) {
                 valueNetto,
                 qtyInPcs,
                 jumlahKarton,
-                totalBonusBarang,
-                totalCashback,
-                LayerBonus: layerBonus.join('; '), // Menggabungkan semua lapisan bonus menjadi satu kolom
-                LayerCashback: layerCashback.join('; ') // Menggabungkan semua lapisan cashback menjadi satu kolom
+                totalBonusBarang: 0,
+                totalCashback: 0,
+                LayerBonus: '',
+                LayerCashback: '',
+                PromoGabungan: Math.round(porsiCashback),
+                KelipatanGabungan: produkGabungan.includes(namaProduk) ? kelipatan : 0,
+                TotalValueGabungan: produkGabungan.includes(namaProduk) ? totalValueGabungan : 0
             };
 
-            hasilPerhitungan.push(hasil);
-        }
-        processedData++;
+            if (namaProduk && jumlahKarton !== undefined && Area) {
+                const { totalBonusBarang, totalCashback, layerBonus, layerCashback } =
+                    hitungPromo(jumlahKarton, namaProduk, Area, promoRules);
 
-        // Log progress setiap 100 data yang diproses
+                hasil.totalBonusBarang = totalBonusBarang;
+                hasil.totalCashback = totalCashback;
+                hasil.LayerBonus = layerBonus.join('; ');
+                hasil.LayerCashback = layerCashback.join('; ');
+            }
+
+            hasilPerhitungan.push(hasil);
+        });
+
+        processedData++;
         if (processedData % 100 === 0 || processedData === totalData) {
-            console.log(`Proses Data: ${Math.round((processedData / totalData) * 100)}% selesai (${processedData} dari ${totalData} data)`);
+            console.log(`Proses Data: ${Math.round((processedData / totalData) * 100)}% selesai (${processedData}/${totalData})`);
         }
     });
 
-    // Membuat workbook baru untuk hasil perhitungan
     const newWorkbook = XLSX.utils.book_new();
-
-    // Menyiapkan data untuk ditulis ke dalam worksheet
     const hasilWorksheet = XLSX.utils.json_to_sheet(hasilPerhitungan);
-
-    // Menambahkan worksheet ke workbook
     XLSX.utils.book_append_sheet(newWorkbook, hasilWorksheet, 'Hasil Perhitungan');
-
-    // Menyimpan workbook baru ke file Excel
     XLSX.writeFile(newWorkbook, 'hasil_perhitungan_promo.xlsx');
 
-    console.log('File Excel hasil perhitungan telah dibuat: hasil_perhitungan_promo.xlsx');
+    console.log('✅ File hasil_perhitungan_promo.xlsx telah berhasil dibuat.');
 }
 
 // Membaca aturan promo dari file Excel
