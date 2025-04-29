@@ -52,7 +52,7 @@ npm install xlsx
 ## ▶️ Cara Menjalankan
 
 ```bash
-node hitungPromo.js
+node promo-gabungan.js
 ```
 
 Setelah selesai, file `hasil_perhitungan_promo.xlsx` akan muncul di folder yang sama.
