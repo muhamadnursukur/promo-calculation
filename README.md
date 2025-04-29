@@ -1,25 +1,47 @@
-# Promo Calculation - Excel Based
+# 📦 Promo Calculation Engine
 
-Script Node.js ini digunakan untuk membaca aturan promo dari file Excel dan memproses data transaksi penjualan (`sell out`) untuk menghitung:
-- **Bonus Barang**
-- **Cashback**
-- **Promo Gabungan berdasarkan region dan produk tertentu**
+Skrip ini digunakan untuk menghitung bonus barang dan cashback berdasarkan data penjualan (sell out) dan aturan promo yang didefinisikan dalam file Excel. Sistem ini juga mendukung perhitungan **promo gabungan kuantitas** dan **promo gabungan value** berdasarkan kelompok produk.
 
-Hasilnya akan disimpan ke file baru bernama `hasil_perhitungan_promo.xlsx`.
+---
 
 ## 📁 Struktur File
 
-- `aturan_promo.xlsx` - berisi aturan promo (bonus & cashback) berdasarkan produk dan area.
-- `data_sell_out.xlsx` - data transaksi penjualan yang akan diproses.
-- `hasil_perhitungan_promo.xlsx` - output hasil kalkulasi promo.
+- `aturan_promo.xlsx`  
+  Berisi daftar aturan promo, termasuk jenis promo, nilai bonus, batas minimum dan maksimum, serta informasi kelompok produk jika promo bersifat gabungan.
 
-## 🚀 Cara Pakai
+- `data_sell_out.xlsx`  
+  Berisi data transaksi penjualan yang akan dihitung promonya, termasuk informasi toko, produk, jumlah, dan nilai transaksi.
 
-1. **Install dependency:**
+- `hasil_perhitungan_promo.xlsx`  
+  File output hasil perhitungan promo berdasarkan aturan dan data penjualan.
+
+---
+
+## ⚙️ Cara Kerja
+
+1. **Baca Aturan Promo**
+   - Skrip membaca dan mengelompokkan aturan berdasarkan produk dan area.
+   - Mendukung banyak tipe promo:
+     - Bonus Barang
+     - Cashback
+     - Gabungan Kuantitas
+     - Gabungan Value
+   - Mendukung penggabungan produk dalam satu kelompok.
+
+2. **Proses Transaksi**
+   - Data penjualan dikelompokkan per nota dan toko.
+   - Sistem menghitung bonus/cashback langsung per produk.
+   - Jika produk bagian dari promo gabungan, sistem akan cek kelengkapan produk dalam kelompok untuk hitung bonus gabungan (kuantitas dan value).
+
+3. **Hasil Perhitungan**
+   - Hasil akhir ditulis ke file `hasil_perhitungan_promo.xlsx`, lengkap dengan rincian layer dan kelipatan promo.
+
+---
+
+## 🛠️ Instalasi
+
+1. Pastikan Node.js sudah terpasang.
+2. Instal dependensi:
+
 ```bash
 npm install xlsx
-```
-
-2. **Run Program:**
-```bash
-node index.js
