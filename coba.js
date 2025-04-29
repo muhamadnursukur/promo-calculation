@@ -1,4 +1,5 @@
 const XLSX = require('xlsx');
+const path = require('path');
 
 function bacaPromoExcel(filePath) {
     const workbook = XLSX.readFile(filePath);
@@ -27,7 +28,7 @@ function bacaPromoExcel(filePath) {
                 tipePromo,
                 min: parseFloat(String(Min).replace(/,/g, '')),
                 max: Max === '999,999' || Max === '999999' ? Infinity : parseFloat(String(Max).replace(/,/g, '')),
-                value: parseFloat(Value),
+                value: parseFloat(String(Value).replace(/,/g, '')),
                 produkGabungan: produkGabungan === 'Ya',
                 kelompok,
                 wajibGabungan: wajibGabungan === 'Ya'
@@ -65,10 +66,10 @@ function hitungPromo(jumlahKarton, namaProduk, area, promoRules) {
         let remainingKarton = jumlahKarton;
 
         sortedBonusRules.forEach(rule => {
-            while (remainingKarton >= rule.min) {
+            if (remainingKarton >= rule.min) {
                 const kelipatan = Math.floor(remainingKarton / rule.min);
                 totalBonusBarang += kelipatan * rule.value;
-                layerBonus.push(`Layer ${rule.min}-${rule.max} Karton`);
+                layerBonus.push(`Layer ${rule.min}-${rule.max} Karton x${kelipatan}`);
                 remainingKarton -= kelipatan * rule.min;
             }
         });
@@ -114,8 +115,10 @@ function prosesTransaction(filePath, promoRules, kelompokGabungan) {
 
             transaksiList.forEach(row => {
                 if (produkList.includes(row['Nama Produk'])) {
-                    totalKarton += row['Jumlah Karton'] || 0;
-                    totalValue += row['Value Netto'] || 0;
+                    const qty = row['Jumlah Karton'] || 0;
+                    const value = row['Value Netto'] || 0;
+                    totalKarton += qty;
+                    totalValue += value;
                     produkToKelompok[row['Nama Produk']] = kelompok;
                 }
             });
@@ -148,29 +151,44 @@ function prosesTransaction(filePath, promoRules, kelompokGabungan) {
 
                 if (produkAdaSemua) {
                     const rules = promoRules[namaProduk][area];
-                    let totalKartonGab = kelompokQtyMap[kelompok] || 0;
+                    const totalKartonGab = kelompokQtyMap[kelompok] || 0;
                     const totalValueGab = kelompokValueMap[kelompok] || 0;
 
-                    const gabunganQtyRules = rules.filter(r => r.tipePromo === 'Gabungan Kuantitas' && r.kelompok === kelompok && r.wajibGabungan);
-                    const gabunganValueRules = rules.filter(r => r.tipePromo === 'Gabungan Value' && r.kelompok === kelompok && r.wajibGabungan);
+                    const gabunganQtyRules = rules
+                        .filter(rule => rule.kelompok === kelompok && rule.tipePromo === 'Gabungan Kuantitas')
+                        .sort((a, b) => b.min - a.min);
 
-                    gabunganQtyRules.sort((a, b) => b.min - a.min).forEach(rule => {
-                        while (totalKartonGab >= rule.min) {
-                            kelipatanGabunganQty++;
-                            const benefit = rule.value;
-                            const proporsi = (valueNetto / totalValueGab);
-                            promoGabunganQty += Math.round(proporsi * benefit);
-                            totalKartonGab -= rule.min;
-                            layerGabunganQty += `Layer ${rule.min}-${rule.max} Karton; `;
+                    const gabunganValueRules = rules
+                        .filter(rule => rule.kelompok === kelompok && rule.tipePromo === 'Gabungan Values')
+                        .sort((a, b) => b.min - a.min);
+
+                    let sisaKartonGab = totalKartonGab;
+                    let layerGabunganList = [];
+                    kelipatanGabunganQty = 0;
+
+                    for (const rule of gabunganQtyRules) {
+                        const kelipatan = Math.floor(sisaKartonGab / rule.min);
+                        if (kelipatan > 0) {
+                            const nilai = kelipatan * rule.value;
+                            if (totalValueGab > 0 && valueNetto > 0) {
+                                const proporsional = (valueNetto / totalValueGab) * nilai;
+                                promoGabunganQty += Math.round(proporsional);
+                            }
+                            kelipatanGabunganQty += kelipatan;
+                            layerGabunganList.push(`Layer ${rule.min}-${rule.max} x${kelipatan}`);
+                            sisaKartonGab -= kelipatan * rule.min;
                         }
-                    });
+                    }
+                    layerGabunganQty = layerGabunganList.join('; ');
 
-                    gabunganValueRules.forEach(rule => {
+                    for (const rule of gabunganValueRules) {
                         if (totalValueGab >= rule.min) {
                             const kelipatanValue = Math.floor(totalValueGab / rule.min);
-                            promoGabunganValue += Math.round((valueNetto / totalValueGab) * (kelipatanValue * rule.value));
+                            if (totalValueGab > 0 && valueNetto > 0) {
+                                promoGabunganValue += Math.round((valueNetto / totalValueGab) * (kelipatanValue * rule.value));
+                            }
                         }
-                    });
+                    }
                 }
             }
 

@@ -1,5 +1,7 @@
 const XLSX = require('xlsx');
+const path = require('path');
 
+// Fungsi untuk membaca aturan promo dari file Excel
 function bacaPromoExcel(filePath) {
     const workbook = XLSX.readFile(filePath);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -25,8 +27,8 @@ function bacaPromoExcel(filePath) {
 
             promoRules[namaProduk][Area].push({
                 tipePromo,
-                min: parseFloat(String(Min).replace(/,/g, '')),
-                max: Max === '999,999' || Max === '999999' ? Infinity : parseFloat(String(Max).replace(/,/g, '')),
+                min: parseFloat(Min),
+                max: Max === '999999' ? Infinity : parseFloat(Max),
                 value: parseFloat(Value),
                 produkGabungan: produkGabungan === 'Ya',
                 kelompok,
@@ -65,10 +67,10 @@ function hitungPromo(jumlahKarton, namaProduk, area, promoRules) {
         let remainingKarton = jumlahKarton;
 
         sortedBonusRules.forEach(rule => {
-            while (remainingKarton >= rule.min) {
+            if (remainingKarton >= rule.min) {
                 const kelipatan = Math.floor(remainingKarton / rule.min);
                 totalBonusBarang += kelipatan * rule.value;
-                layerBonus.push(`Layer ${rule.min}-${rule.max} Karton`);
+                layerBonus.push(`Layer ${rule.min}-${rule.max} Karton (${kelipatan}x)`);
                 remainingKarton -= kelipatan * rule.min;
             }
         });
@@ -114,8 +116,10 @@ function prosesTransaction(filePath, promoRules, kelompokGabungan) {
 
             transaksiList.forEach(row => {
                 if (produkList.includes(row['Nama Produk'])) {
-                    totalKarton += row['Jumlah Karton'] || 0;
-                    totalValue += row['Value Netto'] || 0;
+                    const qty = row['Jumlah Karton'] || 0;
+                    const value = row['Value Netto'] || 0;
+                    totalKarton += qty;
+                    totalValue += value;
                     produkToKelompok[row['Nama Produk']] = kelompok;
                 }
             });
@@ -148,27 +152,37 @@ function prosesTransaction(filePath, promoRules, kelompokGabungan) {
 
                 if (produkAdaSemua) {
                     const rules = promoRules[namaProduk][area];
-                    let totalKartonGab = kelompokQtyMap[kelompok] || 0;
+                    const totalKartonGab = kelompokQtyMap[kelompok] || 0;
                     const totalValueGab = kelompokValueMap[kelompok] || 0;
 
-                    const gabunganQtyRules = rules.filter(r => r.tipePromo === 'Gabungan Kuantitas' && r.kelompok === kelompok && r.wajibGabungan);
-                    const gabunganValueRules = rules.filter(r => r.tipePromo === 'Gabungan Value' && r.kelompok === kelompok && r.wajibGabungan);
+                    // ==== PROMO GABUNGAN KUANTITAS (BERLAPIS) ====
+                    const applicableQtyRules = rules.filter(rule =>
+                        rule.kelompok === kelompok && rule.tipePromo === 'Gabungan Kuantitas'
+                    );
 
-                    gabunganQtyRules.sort((a, b) => b.min - a.min).forEach(rule => {
-                        while (totalKartonGab >= rule.min) {
-                            kelipatanGabunganQty++;
-                            const benefit = rule.value;
-                            const proporsi = (valueNetto / totalValueGab);
-                            promoGabunganQty += Math.round(proporsi * benefit);
-                            totalKartonGab -= rule.min;
-                            layerGabunganQty += `Layer ${rule.min}-${rule.max} Karton; `;
+                    const sortedGabunganQtyRules = applicableQtyRules.sort((a, b) => b.min - a.min);
+                    let remainingKartonGab = totalKartonGab;
+
+                    sortedGabunganQtyRules.forEach(rule => {
+                        if (remainingKartonGab >= rule.min) {
+                            const kelipatan = Math.floor(remainingKartonGab / rule.min);
+                            const bonus = Math.round((valueNetto / totalValueGab) * (kelipatan * rule.value));
+                            promoGabunganQty += bonus;
+                            kelipatanGabunganQty += kelipatan;
+                            layerGabunganQty += `Layer ${rule.min}-${rule.max} Karton (${kelipatan}x); `;
+                            remainingKartonGab -= kelipatan * rule.min;
                         }
                     });
 
-                    gabunganValueRules.forEach(rule => {
-                        if (totalValueGab >= rule.min) {
-                            const kelipatanValue = Math.floor(totalValueGab / rule.min);
-                            promoGabunganValue += Math.round((valueNetto / totalValueGab) * (kelipatanValue * rule.value));
+                    // ==== PROMO GABUNGAN VALUE ====
+                    rules.forEach(rule => {
+                        if (rule.kelompok === kelompok && rule.tipePromo === 'Gabungan Value') {
+                            if (totalValueGab >= rule.min) {
+                                const kelipatanValue = Math.floor(totalValueGab / rule.min);
+                                if (totalValueGab > 0 && valueNetto > 0) {
+                                    promoGabunganValue += Math.round((valueNetto / totalValueGab) * (kelipatanValue * rule.value));
+                                }
+                            }
                         }
                     });
                 }
@@ -183,7 +197,7 @@ function prosesTransaction(filePath, promoRules, kelompokGabungan) {
                 LayerCashback: layerCashback.join('; '),
                 PromoGabunganQty: promoGabunganQty,
                 PromoGabunganValue: promoGabunganValue,
-                LayerGabunganQty: layerGabunganQty.trim(),
+                LayerGabunganQty: layerGabunganQty,
                 KelipatanGabunganQty: kelipatanGabunganQty
             });
         });
@@ -196,7 +210,9 @@ function prosesTransaction(filePath, promoRules, kelompokGabungan) {
     console.log('✅ File hasil_perhitungan_promo.xlsx berhasil dibuat.');
 }
 
+// Eksekusi utama
 const { promoRules, kelompokGabungan } = bacaPromoExcel('aturan_promo.xlsx');
+
 console.time('Proses Perhitungan Promo');
 prosesTransaction('data_sell_out.xlsx', promoRules, kelompokGabungan);
 console.timeEnd('Proses Perhitungan Promo');
